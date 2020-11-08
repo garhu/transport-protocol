@@ -1,4 +1,4 @@
-#!/usr/bin/python -u
+#!/usr/bin/env python3
 #
 # CS3700, Spring 2015
 # Project 2 Starter Code
@@ -10,19 +10,24 @@ import time
 import datetime
 import select
 import json
+import struct
+
 
 def log(string):
-  sys.stderr.write(datetime.datetime.now().strftime("%H:%M:%S.%f") + " " + string + "\n")
+    sys.stderr.write(datetime.datetime.now().strftime(
+        "%H:%M:%S.%f") + " " + string + "\n")
+
 
 MSG_SIZE = 1500
 TIMEOUT = 30
+known_sequence = set()
 
 # Bind to localhost and an ephemeral port
 UDP_IP = "127.0.0.1"
-UDP_PORT = 0
+UDP_PORT = int(sys.argv[1])
 
 # Set up the socket
-sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM) 
+sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
 sock.bind((UDP_IP, UDP_PORT))
 sock.settimeout(TIMEOUT)
 
@@ -32,36 +37,46 @@ log("[bound] " + str(UDP_PORT))
 
 # Now listen for packets
 while True:
-  result = sock.recvfrom(MSG_SIZE)
+    result = sock.recvfrom(MSG_SIZE)
 
-  # If nothing is ready, we hit the timeout
-  if result:
-    (data, addr) = result
+    # If nothing is ready, we hit the timeout
+    if result:
+        (data, addr) = result
 
-    try:
-      decoded = json.loads(data)
+        try:
+            size_of_message = len(data) - 10
+            # decoded = json.loads(data)
+            sequence, message, ack, eof = struct.unpack(
+                'l' + str(size_of_message) + 's??', data)
+            # handles duplicate packets
+            if sequence in known_sequence:
+                continue
+            known_sequence.add(sequence)
+            message = message.decode()
 
-      # If the EOF flag is set, exit
-      if (decoded['eof']):
-        log("[completed]")
-        sys.exit(0)
+            # If the EOF flag is set, exit
+            if (eof):
+                log("[completed]")
+                sys.exit(0)
 
-      # If there is data, we accept it and print it out
-      if (decoded['data']):
-        # If we receive data, we assume it's in-order
-        # You will need to do much more here
-        log("[recv data] " + str(decoded['sequence']) + " (" + str(len(decoded['data'])) + ") ACCEPTED (in-order)")
-        sys.stdout.write(decoded['data'])
+            # If there is data, we accept it and print it out
+            if (message):
+                # If we receive data, we assume it's in-order
+                # You will need to do much more here
+                log("[recv data] " + str(sequence) + " (" +
+                    str(len(message)) + ") ACCEPTED (in-order)")
+                sys.stdout.write(message)
 
-      # Send back an ack to the sender
-      msg = json.dumps({"ack": decoded['sequence'] + len(decoded['data'])})
-      log("ABOUT TO SEND " + msg)
-      if sock.sendto(msg, addr) < len(msg):
-        log("[error] unable to fully send packet")
+            # Send back an ack to the sender
+            msg = struct.pack('l', sequence + size_of_message)
+            # json.dumps({"ack": decoded['sequence'] + len(decoded['data'])})
+            log("ABOUT TO SEND " + str(sequence + size_of_message))
+            if sock.sendto(msg, addr) < len(msg):
+                log("[error] unable to fully send packet")
 
-    except (ValueError, KeyError, TypeError) as e:
-      log("[recv corrupt packet]")
-      raise e
-  else:
-    log("[error] timeout")
-    sys.exit(-1)
+        except (ValueError, KeyError, TypeError) as e:
+            log("[recv corrupt packet]")
+            raise e
+    else:
+        log("[error] timeout")
+        sys.exit(-1)
