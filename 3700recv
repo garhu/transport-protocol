@@ -19,6 +19,8 @@ def log(string):
 
 
 MSG_SIZE = 1500
+# This should be equal in both files
+DATA_SIZE = 1000
 TIMEOUT = 30
 known_sequence = set()
 
@@ -49,9 +51,7 @@ while True:
             sequence, message, ack, eof = struct.unpack(
                 'l' + str(size_of_message) + 's??', data)
             # handles duplicate packets
-            if sequence in known_sequence:
-                continue
-            known_sequence.add(sequence)
+
             message = message.decode()
 
             # If the EOF flag is set, exit
@@ -65,7 +65,9 @@ while True:
                 # You will need to do much more here
                 log("[recv data] " + str(sequence) + " (" +
                     str(len(message)) + ") ACCEPTED (in-order)")
-                sys.stdout.write(message)
+                if not sequence in known_sequence:
+                    sys.stdout.write(message)
+                    known_sequence.add(sequence)
 
             # Send back an ack to the sender
             msg = struct.pack('l', sequence + size_of_message)
@@ -73,7 +75,10 @@ while True:
             log("ABOUT TO SEND " + str(sequence + size_of_message))
             if sock.sendto(msg, addr) < len(msg):
                 log("[error] unable to fully send packet")
-
+            # else:
+            #     while not select.select([sock], [], [], .3)[0]:
+            #         log("DROPPED ACK of " + str(sequence + size_of_message))
+            #         sock.sendto(msg, addr)
         except (ValueError, KeyError, TypeError) as e:
             log("[recv corrupt packet]")
             raise e
